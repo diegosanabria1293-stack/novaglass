@@ -230,23 +230,60 @@ margin-bottom:15px;
 .galeria{
 background:#f7f9fb;
 }
-
-.gallery-grid{
-display:grid;
-grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
+.proyectos-slider{
+display:flex;
 gap:20px;
+overflow-x:auto;
+padding:20px 0;
+scroll-behavior:smooth;
 }
 
-.gallery-grid img{
-width:100%;
-height:280px;
+.proyectos-slider img{
+min-width:420px;
+height:300px;
 object-fit:cover;
 border-radius:15px;
-transition:.4s;
+box-shadow:0 10px 25px rgba(0,0,0,.15);
+transition:.3s;
 }
 
-.gallery-grid img:hover{
+.proyectos-slider img:hover{
 transform:scale(1.03);
+}
+
+.proyectos-slider::-webkit-scrollbar{
+height:10px;
+}
+
+.proyectos-slider::-webkit-scrollbar-thumb{
+background:#0a2d6f;
+border-radius:20px;
+}
+
+.como-trabajamos{
+padding:80px 20px;
+background:#f8f9fb;
+}
+
+.proceso-simple{
+display:grid;
+grid-template-columns:repeat(auto-fit,minmax(250px,1fr));
+gap:25px;
+margin-top:40px;
+}
+
+.proceso-simple div{
+background:white;
+padding:30px;
+border-radius:15px;
+box-shadow:0 5px 15px rgba(0,0,0,.08);
+text-align:center;
+}
+
+.proceso-simple h3{
+color:#0a2d6f;
+margin-bottom:10px;
+}
 }
 
 .benefits-grid{
