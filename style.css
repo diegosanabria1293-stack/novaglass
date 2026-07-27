@@ -247,17 +247,7 @@ box-shadow:0 10px 25px rgba(0,0,0,.15);
 transition:.3s;
 }
 
-.proyectos-slider img:hover{
-transform:scale(1.03);
-}
 
-.proyectos-slider::-webkit-scrollbar{
-height:10px;
-}
-
-.proyectos-slider::-webkit-scrollbar-thumb{
-background:#0a2d6f;
-border-radius:20px;
 }
 
 .como-trabajamos{
@@ -273,7 +263,31 @@ margin-top:40px;
 }
 
 .proceso-simple div{
-background:white;
+background:white;.proyectos-slider{
+    display:flex;
+    gap:25px;
+    overflow-x:auto;
+    scroll-behavior:smooth;
+    padding:20px 0;
+}
+
+.proyectos-slider img{
+    width:350px;
+    height:250px;
+    object-fit:cover;
+    border-radius:15px;
+    flex-shrink:0;
+    box-shadow:0 5px 15px rgba(0,0,0,.15);
+}
+
+.proyectos-slider::-webkit-scrollbar{
+    height:8px;
+}
+
+.proyectos-slider::-webkit-scrollbar-thumb{
+    background:#25c7cf;
+    border-radius:20px;
+}
 padding:30px;
 border-radius:15px;
 box-shadow:0 5px 15px rgba(0,0,0,.08);
