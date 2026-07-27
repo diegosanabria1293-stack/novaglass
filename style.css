@@ -592,3 +592,14 @@ transform:translateY(-3px);
     color:#666;
     line-height:1.6;
 }
+#proyectos{
+    width:100%;
+    display:block;
+}
+
+.proceso-premium{
+    width:100%;
+    display:block;
+    clear:both;
+    margin-top:60px;
+}
