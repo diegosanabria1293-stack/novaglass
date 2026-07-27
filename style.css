@@ -625,3 +625,63 @@ transform:translateY(-3px);
     clear:both;
     margin-top:60px;
 }
+/* ==========================
+   MÓVIL - ¿CÓMO TRABAJAMOS?
+========================== */
+
+@media (max-width:768px){
+
+    .proceso-premium{
+        padding:60px 20px;
+    }
+
+    .proceso-premium h2{
+        font-size:30px;
+        margin-bottom:30px;
+    }
+
+    /* Oculta la línea con los números */
+    .linea-proceso{
+        display:none;
+    }
+
+    /* Las tarjetas quedan una debajo de otra */
+    .cards-proceso{
+        display:grid;
+        grid-template-columns:1fr;
+        gap:20px;
+    }
+
+    .card-proceso{
+        width:100%;
+        padding:25px;
+    }
+
+    /* Agrega el número dentro de cada tarjeta */
+    .card-proceso::before{
+        display:flex;
+        justify-content:center;
+        align-items:center;
+        width:50px;
+        height:50px;
+        margin:0 auto 20px;
+        border-radius:50%;
+        background:#0b2e6b;
+        color:#fff;
+        font-size:22px;
+        font-weight:bold;
+    }
+
+    .card-proceso:nth-child(1)::before{
+        content:"1";
+    }
+
+    .card-proceso:nth-child(2)::before{
+        content:"2";
+    }
+
+    .card-proceso:nth-child(3)::before{
+        content:"3";
+    }
+
+}
