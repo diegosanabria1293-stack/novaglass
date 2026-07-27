@@ -142,6 +142,28 @@ font-size:1rem;
 @media(max-width:768px){
      .btn-whatsapp{
         display:none;
+          /* Arreglo sección Cómo Trabajamos en móvil */
+
+.timeline-cards{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:20px;
+}
+
+.timeline-card{
+    width:90%;
+    max-width:320px;
+}
+
+.timeline{
+    flex-direction:column;
+    gap:20px;
+}
+
+.timeline-line{
+    display:none;
+}
     }
 
     .nav{
