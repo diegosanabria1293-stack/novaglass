@@ -583,7 +583,38 @@ function editarProyecto(id){const p=proyectos.find(x=>x.id===id);if(!p)return;pr
 function volverAProyectos(){showScreen('screen-projects');renderProyectos();}
 function cargarProyectoEnFormulario(){const p=proyectoActual;document.getElementById('proj-cliente').value=p.cliente;document.getElementById('proj-nombre').value=p.nombre;document.getElementById('proj-fecha').value=p.fecha;document.getElementById('proj-telefono').value=p.telefono;document.getElementById('proj-ciudad').value=p.ciudad;document.getElementById('proj-transporte').value=p.transporte;document.getElementById('proj-viaticos').value=p.viaticos;document.getElementById('proj-otros').value=p.otros;document.getElementById('proj-utilidad').value=p.utilidad;document.getElementById('proj-notas').value=p.notas;renderItems();renderResumen();}
 function leerProyectoDelFormulario(){const p=proyectoActual;p.cliente=document.getElementById('proj-cliente').value;p.nombre=document.getElementById('proj-nombre').value;p.fecha=document.getElementById('proj-fecha').value;p.telefono=document.getElementById('proj-telefono').value;p.ciudad=document.getElementById('proj-ciudad').value;p.transporte=parseFloat(document.getElementById('proj-transporte').value)||0;p.viaticos=parseFloat(document.getElementById('proj-viaticos').value)||0;p.otros=parseFloat(document.getElementById('proj-otros').value)||0;p.utilidad=parseFloat(document.getElementById('proj-utilidad').value)||40;p.notas=document.getElementById('proj-notas').value;}
-function renderProyectos(){renderEmpresaResumen();const container=document.getElementById('listaProyectos');if(proyectos.length===0){container.innerHTML='<div class="empty-state"><div class="icon">📂</div><p>No hay proyectos guardados aún.</p><p style="font-size:0.85rem; margin-top:8px;">Crea tu primera cotización con el botón de arriba.</p></div>';return;}container.innerHTML=proyectos.map(p=>{const total=calcularTotalProyecto(p);return '<div class="project-card" onclick="editarProyecto('+p.id+')"><div class="proj-title">'+(p.cliente||'Sin cliente')+' — '+(p.nombre||'Sin nombre')+'</div><div class="proj-meta">📅 '+p.fecha+' &nbsp;|&nbsp; 📍 '+p.ciudad+' &nbsp;|&nbsp; 🔧 '+p.items.length+' ítems</div><div class="proj-total">'+formatMoney(total)+'</div></div>';}).join('');}
+function renderProyectos(){
+  renderEmpresaResumen();
+  const container=document.getElementById('listaProyectos');
+  if(proyectos.length===0){
+    container.innerHTML='<div class="empty-state"><div class="icon">📂</div><p>No hay proyectos guardados aún.</p><p style="font-size:0.85rem; margin-top:8px;">Crea tu primera cotización con el botón de arriba.</p></div>';
+    return;
+  }
+  container.innerHTML=proyectos.map(p=>{
+    const total=calcularTotalProyecto(p);
+    return '<div class="project-card" style="display:flex;justify-content:space-between;align-items:center;gap:12px;">'+
+      '<div style="flex:1;cursor:pointer;" onclick="editarProyecto('+p.id+')">'+
+        '<div class="proj-title">'+(p.cliente||'Sin cliente')+' — '+(p.nombre||'Sin nombre')+'</div>'+
+        '<div class="proj-meta">📅 '+p.fecha+' &nbsp;|&nbsp; 📍 '+p.ciudad+' &nbsp;|&nbsp; 🔧 '+p.items.length+' ítems</div>'+
+        '<div class="proj-total">'+formatMoney(total)+'</div>'+
+      '</div>'+
+      '<button class="btn btn-danger btn-sm" onclick="event.stopPropagation();eliminarProyecto('+p.id+')" title="Eliminar proyecto">🗑️</button>'+
+    '</div>';
+  }).join('');
+}
+
+async function eliminarProyecto(id){
+  if(!confirm('¿Seguro que quieres eliminar este proyecto? Esta acción no se puede deshacer.')) return;
+  proyectos = proyectos.filter(p => p.id !== id);
+  localStorage.setItem('novaglass_proyectos', JSON.stringify(proyectos));
+  try{
+    if(sb){
+      const { error } = await sb.from('proyectos').delete().eq('id', id);
+      if(error) console.warn('Error eliminando en Supabase:', error);
+    }
+  }catch(e){ console.warn('No se pudo eliminar en la nube.', e); }
+  renderProyectos();
+}
 function calcularTotalProyecto(p){const{precioFinalProyecto}=calcularCostosGlobales(p);return precioFinalProyecto;}
 
 function renderItems(){
@@ -1333,164 +1364,294 @@ function exportarInformePDF(){
 }
 
 function exportarPDF(){
+  // ====== CONFIGURA AQUÍ TU LOGO ======
+  // Sube tu logo a GitHub como logo.png y pon la URL completa.
+  // Si lo dejas vacío, se usará un ícono por defecto.
+  const LOGO_URL = ""; // Ej: "https://tudominio.com/logo.png"
+  // ====================================
+
   leerProyectoDelFormulario();
   const p=proyectoActual;
   const{itemsConPrecio,precioFinalProyecto}=calcularCostosGlobales(p);
   const emp=empresa;
 
-  let html=`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Cotización NOVAGLASS</title>
-    <style>
-      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
-      body{font-family:'Inter',Arial,sans-serif;max-width:900px;margin:20px auto;padding:20px;color:#1e293b;background:#fff}
-      .header-top{background:linear-gradient(135deg,#0f172a,#1e3a5f);color:white;padding:32px 28px;border-radius:0 0 24px 24px;display:flex;justify-content:space-between;align-items:center;}
-      .header-top .brand{display:flex;align-items:center;gap:14px;}
-      .header-top .brand-icon{font-size:2.8rem;}
-      .header-top .brand-text h1{margin:0;font-size:1.9rem;font-weight:800;letter-spacing:-0.5px;}
-      .header-top .brand-text p{margin:4px 0 0;opacity:0.85;font-size:0.85rem;}
-      .header-top .cot-info{text-align:right;}
-      .header-top .cot-info .cot-label{font-size:0.75rem;opacity:0.8;text-transform:uppercase;letter-spacing:1px;}
-      .header-top .cot-info .cot-num{font-size:1.4rem;font-weight:800;color:#f59e0b;margin-top:4px;}
-      .header-top .cot-info .cot-date{font-size:0.85rem;opacity:0.9;margin-top:4px;}
-      .header-top .cot-info .cot-nit{font-size:0.8rem;opacity:0.8;margin-top:2px;}
-      .section-title{background:#0f172a;color:white;display:inline-block;padding:6px 18px;border-radius:20px;font-size:0.8rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin:24px 0 14px;}
-      .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:14px 0;}
-      .info-box{background:#f8fafc;padding:14px 18px;border-radius:12px;border:1px solid #e2e8f0;}
-      .info-box .label{font-size:0.7rem;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;}
-      .info-box .value{font-size:0.95rem;font-weight:700;color:#0f172a;margin-top:4px;}
-      .objeto-box{background:#f8fafc;padding:16px 18px;border-radius:12px;border:1px solid #e2e8f0;font-size:0.9rem;line-height:1.6;}
-      table{width:100%;border-collapse:collapse;margin:12px 0;font-size:0.85rem;}
-      th,td{padding:10px 8px;text-align:left;border-bottom:1px solid #e2e8f0;}
-      th{background:#0f172a;color:white;font-weight:700;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.5px;}
-      .text-right{text-align:right;}
-      .text-center{text-align:center;}
-      .badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:0.65rem;font-weight:700;background:#dbeafe;color:#1d4ed8;}
-      .total-box{background:linear-gradient(135deg,#0f172a,#1e3a5f);color:white;padding:28px;border-radius:16px;text-align:center;margin-top:24px;}
-      .total-box .label{font-size:0.85rem;opacity:0.9;text-transform:uppercase;letter-spacing:1px;}
-      .total-box .price{font-size:2.4rem;font-weight:800;margin-top:8px;color:#f59e0b;}
-      .total-box .price-letters{font-size:0.85rem;opacity:0.85;margin-top:6px;}
-      .two-col{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px;}
-      .cond-box{background:#f8fafc;padding:16px;border-radius:12px;border:1px solid #e2e8f0;font-size:0.85rem;}
-      .cond-box h4{margin:0 0 10px;font-size:0.8rem;color:#0f172a;text-transform:uppercase;letter-spacing:0.5px;}
-      .cond-box ul{margin:0;padding-left:18px;}
-      .cond-box li{margin-bottom:6px;}
-      .accept-box{border:2px solid #e2e8f0;padding:16px;border-radius:12px;margin-top:20px;}
-      .accept-box h4{margin:0 0 12px;font-size:0.8rem;color:#0f172a;text-transform:uppercase;letter-spacing:0.5px;}
-      .sign-line{border-bottom:1px solid #94a3b8;height:28px;margin-bottom:4px;}
-      .sign-label{font-size:0.75rem;color:#64748b;}
-      .atentamente-box{margin-top:24px;font-size:0.85rem;}
-      .atentamente-box .firma-line{border-bottom:1px solid #94a3b8;width:220px;height:40px;margin-bottom:4px;}
-      .atentamente-box .firma-nombre{font-weight:700;color:#0f172a;}
-      .atentamente-box .firma-empresa{color:#64748b;font-size:0.8rem;}
-      .footer-pdf{text-align:center;color:#94a3b8;font-size:0.75rem;margin-top:32px;padding-top:20px;border-top:2px solid #f1f5f9;}
-      .footer-icons{display:flex;justify-content:center;gap:24px;margin-top:12px;flex-wrap:wrap;}
-      .footer-icon-item{display:flex;align-items:center;gap:6px;font-size:0.75rem;color:#64748b;}
-      @media print{body{margin:0;padding:10px;}}
-    </style></head><body>
-    <div class="header-top">
-      <div class="brand">
-        <div class="brand-icon">🔷</div>
-        <div class="brand-text">
-          <h1>${emp.nombre||'NOVAGLASS'}</h1>
-          <p>Aluminio, Vidrio y Acero Inoxidable</p>
+  function formatoFechaLarga(fechaStr){
+    if(!fechaStr) return '';
+    const meses=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+    const parts=fechaStr.split('-');
+    if(parts.length!==3) return fechaStr;
+    return parseInt(parts[2])+' de '+meses[parseInt(parts[1])-1]+' de '+parts[0];
+  }
+  const fechaLarga=formatoFechaLarga(p.fecha);
+  const logoHTML = LOGO_URL
+    ? `<img src="${LOGO_URL}" class="pdf-logo" alt="${emp.nombre||'NOVAGLASS'}">`
+    : `<div class="pdf-logo-fallback">🔷</div>`;
+
+  let html=`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Cotización ${emp.nombre||'NOVAGLASS'}</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap');
+    *{margin:0;padding:0;box-sizing:border-box;}
+    body{font-family:'Inter',Arial,sans-serif;max-width:900px;margin:0 auto;background:#fff;color:#1e293b;font-size:13px;line-height:1.4;}
+    /* HEADER */
+    .pdf-header{display:grid;grid-template-columns:1.4fr 1fr;border-bottom:4px solid #0f172a;}
+    .pdf-header-left{background:#0f172a;color:white;padding:26px 30px;position:relative;display:flex;align-items:center;gap:16px;overflow:hidden;}
+    .pdf-header-left::after{content:'';position:absolute;right:-20px;top:0;width:40px;height:100%;background:#f59e0b;transform:skewX(-14deg);z-index:1;}
+    .pdf-header-left-inner{position:relative;z-index:2;display:flex;align-items:center;gap:16px;}
+    .pdf-logo{height:60px;width:auto;max-width:130px;object-fit:contain;filter:brightness(0) invert(1);}
+    .pdf-logo-fallback{width:60px;height:60px;background:#f59e0b;color:white;display:flex;align-items:center;justify-content:center;font-size:1.8rem;border-radius:10px;}
+    .pdf-brand-block{display:flex;flex-direction:column;gap:4px;}
+    .pdf-brand-name{font-size:1.6rem;font-weight:900;letter-spacing:1px;line-height:1;}
+    .pdf-brand-tag{font-size:0.62rem;letter-spacing:1.3px;opacity:0.85;max-width:230px;line-height:1.4;font-weight:600;}
+    .pdf-header-right{background:white;padding:22px 26px;display:flex;flex-direction:column;justify-content:center;gap:8px;}
+    .pdf-title{font-size:1.5rem;font-weight:900;color:#0f172a;letter-spacing:-0.5px;line-height:1;}
+    .pdf-title-line{width:55px;height:3px;background:#f59e0b;margin-top:4px;}
+    .pdf-no-row{display:flex;align-items:center;gap:8px;font-size:0.82rem;font-weight:700;color:#0f172a;margin-top:6px;}
+    .pdf-no-label{color:#64748b;font-weight:700;}
+    .pdf-no-value{background:#f59e0b;color:white;padding:4px 14px;border-radius:5px;font-weight:900;letter-spacing:0.5px;}
+    .pdf-date-row{display:flex;align-items:center;gap:8px;font-size:0.82rem;color:#0f172a;font-weight:600;}
+    .pdf-nit-box{background:#0f172a;color:white;padding:8px 14px;border-radius:6px;display:flex;align-items:center;gap:10px;margin-top:4px;}
+    .pdf-nit-icon{font-size:1.4rem;}
+    .pdf-nit-text{display:flex;flex-direction:column;}
+    .pdf-nit-label{font-size:0.6rem;letter-spacing:1.2px;opacity:0.8;font-weight:700;}
+    .pdf-nit-value{font-size:0.9rem;font-weight:800;letter-spacing:0.5px;}
+    /* SECCIONES INFO */
+    .pdf-section{padding:22px 30px 0;}
+    .pdf-two-col{display:grid;grid-template-columns:1fr 1fr;gap:30px;}
+    .pdf-col-head{display:flex;align-items:center;gap:10px;margin-bottom:12px;}
+    .pdf-col-icon{width:36px;height:36px;border-radius:50%;background:#0f172a;color:white;display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0;}
+    .pdf-col-name{font-size:0.75rem;font-weight:900;letter-spacing:1px;color:#0f172a;text-transform:uppercase;background:#f1f5f9;padding:6px 16px;border-radius:18px;border:1.5px solid #0f172a;}
+    .pdf-info-line{display:flex;gap:8px;padding:3px 0;font-size:0.82rem;line-height:1.55;}
+    .pdf-info-lbl{color:#64748b;font-weight:700;min-width:80px;flex-shrink:0;}
+    .pdf-info-val{color:#0f172a;font-weight:600;flex:1;}
+    .pdf-divider{height:2px;background:#0f172a;margin:20px 30px 0;opacity:0.15;}
+    /* OBJETO */
+    .pdf-band{padding:16px 30px 0;}
+    .pdf-band-inner{display:inline-flex;align-items:center;gap:10px;background:#f1f5f9;border:2px solid #0f172a;border-radius:22px;padding:8px 22px;font-weight:900;font-size:0.8rem;color:#0f172a;letter-spacing:0.8px;text-transform:uppercase;}
+    .pdf-band-icon{font-size:1.15rem;}
+    .pdf-objeto{margin:14px 30px 0;padding:16px 20px;border:2px solid #0f172a;border-radius:10px;font-size:0.82rem;line-height:1.6;color:#334155;}
+    .pdf-lead{margin:14px 30px 0;font-size:0.85rem;color:#334155;}
+    /* TABLA */
+    .pdf-table-wrap{padding:10px 30px 0;}
+    .pdf-table{width:100%;border-collapse:collapse;font-size:0.78rem;border:2px solid #0f172a;}
+    .pdf-table th{background:#0f172a;color:white;padding:10px 8px;text-align:left;font-size:0.66rem;font-weight:800;letter-spacing:0.8px;text-transform:uppercase;}
+    .pdf-table td{padding:11px 8px;border-bottom:1px solid #e2e8f0;vertical-align:top;line-height:1.4;}
+    .pdf-table tr:last-child td{border-bottom:none;}
+    .pdf-table .c{text-align:center;}
+    .pdf-table .r{text-align:right;font-weight:700;}
+    .pdf-table .desc{font-weight:700;color:#0f172a;}
+    .pdf-table .desc small{font-weight:500;color:#64748b;display:block;margin-top:2px;}
+    /* TOTAL */
+    .pdf-total-wrap{padding:14px 30px 0;display:flex;justify-content:flex-end;}
+    .pdf-total{display:inline-flex;align-items:stretch;box-shadow:0 4px 12px rgba(15,23,42,0.15);border-radius:8px;overflow:hidden;}
+    .pdf-total-lbl{background:#0f172a;color:white;padding:14px 24px;display:flex;align-items:center;font-weight:900;letter-spacing:1.2px;font-size:0.82rem;}
+    .pdf-total-val{background:#f59e0b;color:white;padding:14px 30px;display:flex;align-items:center;font-weight:900;font-size:1.5rem;}
+    .pdf-total-letras{padding:8px 30px 18px;text-align:right;font-size:0.78rem;color:#334155;font-style:italic;font-weight:600;}
+    /* CONDICIONES Y OBSERVACIONES */
+    .pdf-bottom{display:grid;grid-template-columns:1fr 1fr;gap:26px;padding:14px 30px;}
+    .pdf-bottom-head{display:inline-flex;align-items:center;gap:8px;background:#0f172a;color:white;padding:7px 16px;border-radius:18px;font-weight:900;font-size:0.72rem;letter-spacing:0.8px;text-transform:uppercase;margin-bottom:12px;}
+    .pdf-bottom-head .ic{font-size:1rem;}
+    .pdf-bottom ul{list-style:none;}
+    .pdf-bottom li{padding:5px 0 5px 20px;position:relative;line-height:1.5;font-size:0.8rem;color:#334155;}
+    .pdf-bottom li::before{content:'✓';position:absolute;left:0;top:5px;color:#f59e0b;font-weight:900;font-size:0.95rem;}
+    .pdf-bottom li strong{color:#0f172a;}
+    /* FIRMAS */
+    .pdf-signs{display:grid;grid-template-columns:1fr 1fr;gap:40px;padding:22px 30px 10px;}
+    .pdf-sign-head{display:inline-flex;align-items:center;gap:8px;background:#0f172a;color:white;padding:7px 16px;border-radius:18px;font-weight:900;font-size:0.72rem;letter-spacing:0.8px;text-transform:uppercase;margin-bottom:16px;}
+    .pdf-sign-head .ic{font-size:1rem;}
+    .pdf-sign-row{display:flex;align-items:flex-end;gap:8px;padding:6px 0;font-size:0.8rem;}
+    .pdf-sign-row .lbl{color:#64748b;font-weight:700;min-width:55px;}
+    .pdf-sign-row .line{flex:1;border-bottom:1px solid #94a3b8;height:18px;}
+    .pdf-sign-manual{border-bottom:1px solid #94a3b8;padding:24px 0 2px;font-family:'Brush Script MT','Segoe Script',cursive;font-size:1.6rem;color:#0f172a;line-height:0.9;}
+    .pdf-sign-name{font-weight:800;font-size:0.9rem;color:#0f172a;margin-top:6px;}
+    .pdf-sign-sub{font-size:0.72rem;color:#64748b;margin-top:2px;}
+    /* FOOTER */
+    .pdf-footer{background:#0f172a;color:white;padding:12px 30px;display:flex;justify-content:center;gap:22px;font-size:0.72rem;flex-wrap:wrap;margin-top:10px;}
+    .pdf-footer-item{display:flex;align-items:center;gap:6px;font-weight:600;}
+    .pdf-footer-item .ic{background:#f59e0b;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:0.75rem;}
+    .pdf-services{display:grid;grid-template-columns:repeat(6,1fr);background:#f1f5f9;border-top:3px solid #f59e0b;}
+    .pdf-service{padding:14px 6px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:5px;font-size:0.58rem;font-weight:800;letter-spacing:0.3px;color:#0f172a;border-right:1px solid #cbd5e1;line-height:1.25;text-transform:uppercase;}
+    .pdf-service:last-child{border-right:none;}
+    .pdf-service .ic{font-size:1.4rem;}
+    @media print{
+      body{margin:0;padding:0;max-width:100%;}
+      .pdf-table{page-break-inside:auto;}
+      .pdf-table tr{page-break-inside:avoid;}
+      .pdf-bottom,.pdf-signs{page-break-inside:avoid;}
+    }
+  </style></head><body>
+
+  <!-- HEADER -->
+  <div class="pdf-header">
+    <div class="pdf-header-left">
+      <div class="pdf-header-left-inner">
+        ${logoHTML}
+        <div class="pdf-brand-block">
+          <div class="pdf-brand-name">${emp.nombre||'NOVAGLASS'}</div>
+          <div class="pdf-brand-tag">SOLUCIONES EN ALUMINIO, VIDRIO Y ESTRUCTURAS METÁLICAS</div>
         </div>
       </div>
-      <div class="cot-info">
-        <div class="cot-label">Cotización</div>
-        <div class="cot-num">COT-${p.id.toString().slice(-6)}</div>
-        <div class="cot-date">📅 ${p.fecha}</div>
-        <div class="cot-nit">${emp.nit?('NIT: '+emp.nit):''}</div>
+    </div>
+    <div class="pdf-header-right">
+      <div class="pdf-title">COTIZACIÓN</div>
+      <div class="pdf-title-line"></div>
+      <div class="pdf-no-row">
+        <span class="pdf-no-label">No.</span>
+        <span class="pdf-no-value">COT-${p.id.toString().slice(-6)}</span>
+      </div>
+      <div class="pdf-date-row">📅 Fecha: ${fechaLarga}</div>
+      <div class="pdf-nit-box">
+        <div class="pdf-nit-icon">📄</div>
+        <div class="pdf-nit-text">
+          <div class="pdf-nit-label">NIT</div>
+          <div class="pdf-nit-value">${emp.nit||'—'}</div>
+        </div>
       </div>
     </div>
+  </div>
 
-    <div class="section-title">📋 Datos del Cliente</div>
-    <div class="info-grid">
-      <div class="info-box"><div class="label">Cliente</div><div class="value">${p.cliente||'N/A'}</div></div>
-      <div class="info-box"><div class="label">Proyecto / Dirección</div><div class="value">${p.nombre||'N/A'}</div></div>
-      <div class="info-box"><div class="label">Teléfono</div><div class="value">${p.telefono||'N/A'}</div></div>
-      <div class="info-box"><div class="label">Ciudad</div><div class="value">${p.ciudad||'N/A'}</div></div>
+  <!-- DATOS CLIENTE / OFERENTE -->
+  <div class="pdf-section">
+    <div class="pdf-two-col">
+      <div>
+        <div class="pdf-col-head">
+          <div class="pdf-col-icon">👤</div>
+          <div class="pdf-col-name">Datos del Cliente</div>
+        </div>
+        <div class="pdf-info-line"><span class="pdf-info-lbl">Señores:</span><span class="pdf-info-val">${p.cliente||'—'}</span></div>
+        <div class="pdf-info-line"><span class="pdf-info-lbl">Proyecto:</span><span class="pdf-info-val">${p.nombre||'—'}</span></div>
+        <div class="pdf-info-line"><span class="pdf-info-lbl">Atn.:</span><span class="pdf-info-val">Señor(a) Responsable</span></div>
+        <div class="pdf-info-line"><span class="pdf-info-lbl">Teléfono:</span><span class="pdf-info-val">${p.telefono||'—'}</span></div>
+        <div class="pdf-info-line"><span class="pdf-info-lbl">Ciudad:</span><span class="pdf-info-val">${p.ciudad||'—'}</span></div>
+      </div>
+      <div>
+        <div class="pdf-col-head">
+          <div class="pdf-col-icon">🏢</div>
+          <div class="pdf-col-name">Datos del Oferente</div>
+        </div>
+        <div class="pdf-info-line"><span class="pdf-info-lbl">Realizado por:</span><span class="pdf-info-val">${emp.realizadoPor||'—'}</span></div>
+        <div class="pdf-info-line"><span class="pdf-info-lbl">Empresa:</span><span class="pdf-info-val">${emp.nombre||'NOVAGLASS'}</span></div>
+        <div class="pdf-info-line"><span class="pdf-info-lbl">NIT:</span><span class="pdf-info-val">${emp.nit||'—'}</span></div>
+        <div class="pdf-info-line"><span class="pdf-info-lbl">Teléfono:</span><span class="pdf-info-val">${emp.telefono||'—'}</span></div>
+        <div class="pdf-info-line"><span class="pdf-info-lbl">Correo:</span><span class="pdf-info-val">${emp.correo||'—'}</span></div>
+        <div class="pdf-info-line"><span class="pdf-info-lbl">Dirección:</span><span class="pdf-info-val">${emp.direccion||'—'}</span></div>
+      </div>
     </div>
+  </div>
 
-    <div class="section-title">🏢 Datos del Ofertante</div>
-    <div class="info-grid">
-      <div class="info-box"><div class="label">Empresa</div><div class="value">${emp.nombre||'NOVAGLASS'}</div></div>
-      <div class="info-box"><div class="label">Dirección</div><div class="value">${emp.direccion||'N/A'}</div></div>
-      <div class="info-box"><div class="label">Correo</div><div class="value">${emp.correo||'N/A'}</div></div>
-      <div class="info-box"><div class="label">Teléfono</div><div class="value">${emp.telefono||'N/A'}</div></div>
-    </div>
+  <div class="pdf-divider"></div>
 
-    <div class="section-title">📝 Objeto de la Cotización</div>
-    <div class="objeto-box">
-      Presentamos nuestra propuesta para el suministro, fabricación e instalación de los elementos descritos a continuación, garantizando materiales de alta calidad, acabados profesionales y cumplimiento en los tiempos de entrega acordados.
-    </div>
+  <!-- OBJETO -->
+  <div class="pdf-band">
+    <div class="pdf-band-inner"><span class="pdf-band-icon">🎯</span> Objeto de la Cotización</div>
+  </div>
+  <div class="pdf-objeto">
+    Presentamos nuestra propuesta para el suministro, fabricación e instalación de los elementos descritos a continuación, garantizando materiales de alta calidad, acabados profesionales y cumplimiento en los tiempos de entrega.
+  </div>
+  <div class="pdf-lead">De acuerdo con su solicitud, nos permitimos presentar nuestra cotización:</div>
 
-    <div class="section-title">🔧 Ítems Cotizados</div>
-    <table>
-      <thead><tr><th>Ítem</th><th>Descripción</th><th>Medidas</th><th>Unidad</th><th>Cant.</th><th class="text-right">Vlr. Unitario</th><th class="text-right">Vlr. Total</th></tr></thead>
+  <!-- TABLA -->
+  <div class="pdf-table-wrap">
+    <table class="pdf-table">
+      <thead>
+        <tr>
+          <th class="c" style="width:6%;">Ítem</th>
+          <th style="width:42%;">Descripción</th>
+          <th style="width:12%;">Medidas</th>
+          <th class="c" style="width:8%;">Unidad</th>
+          <th class="c" style="width:8%;">Cant.</th>
+          <th class="r" style="width:12%;">Valor Unit.</th>
+          <th class="r" style="width:12%;">Valor Total</th>
+        </tr>
+      </thead>
       <tbody>`;
   itemsConPrecio.forEach((it,i)=>{
     let medidas='';
     if(it.datos.ancho&&it.datos.alto)medidas=it.datos.ancho+' × '+it.datos.alto+' m';
-    else if(it.datos.metros)medidas=it.datos.metros+' m lineales';
-    html+=`<tr><td class="text-center">${i+1}</td><td><strong>${nombreItem(it)}</strong><br><span class="badge">${etiquetaTipo(it.tipo)}</span></td><td>${medidas}</td><td>Uds</td><td class="text-center">${it.cantidad}</td><td class="text-right">${formatMoney(it.precioFinalUnitario)}</td><td class="text-right">${formatMoney(it.precioFinalTotal)}</td></tr>`;
+    else if(it.datos.metros)medidas=it.datos.metros+' m';
+    else medidas='N/A';
+    html+=`<tr>
+      <td class="c"><strong>${i+1}</strong></td>
+      <td class="desc">${nombreItem(it)}<small>${etiquetaTipo(it.tipo)}</small></td>
+      <td>${medidas}</td>
+      <td class="c">Und</td>
+      <td class="c"><strong>${it.cantidad}</strong></td>
+      <td class="r">${formatMoney(it.precioFinalUnitario)}</td>
+      <td class="r">${formatMoney(it.precioFinalTotal)}</td>
+    </tr>`;
   });
-  html+=`</tbody></table>
+  html+=`</tbody>
+    </table>
+  </div>
 
-    <div class="total-box">
-      <div class="label">Valor Total de la Cotización</div>
-      <div class="price">${formatMoney(precioFinalProyecto)}</div>
-      <div class="price-letters">${numeroALetras(Math.round(precioFinalProyecto))} PESOS M/CTE.</div>
+  <!-- TOTAL -->
+  <div class="pdf-total-wrap">
+    <div class="pdf-total">
+      <div class="pdf-total-lbl">VALOR TOTAL</div>
+      <div class="pdf-total-val">${formatMoney(precioFinalProyecto)}</div>
     </div>
+  </div>
+  <div class="pdf-total-letras">Valor total en letras: ${numeroALetras(Math.round(precioFinalProyecto))} PESOS M/CTE.</div>
 
-    <div class="two-col">
-      <div class="cond-box">
-        <h4>📌 Condiciones Comerciales</h4>
-        <ul>
-          <li>Forma de pago: 50% de anticipo para iniciar la fabricación y 50% contra entrega del trabajo terminado.</li>
-          <li>Tiempo de entrega: <strong>Se acuerda con el cliente</strong>.</li>
-          <li>Validez de la oferta: 15 días calendario.</li>
-          <li>Garantía: 30 días calendario por mano de obra e instalación.</li>
-          <li>La cotización incluye todos los materiales, repuestos y mano de obra necesarios para la ejecución del trabajo.</li>
-          <li>Esta cotización no incluye IVA.</li>
-        </ul>
-      </div>
-      <div class="cond-box">
-        <h4>🔍 Observaciones</h4>
-        <ul>
-          <li>El tiempo de ejecución puede variar según la disponibilidad de acceso al área de trabajo y confirmación del anticipo.</li>
-          <li>La propuesta no incluye trabajos adicionales no especificados en el objeto de la cotización.</li>
-          <li>Los precios son referenciales y pueden ajustarse según condiciones especiales del proyecto.</li>
-          ${p.notas?'<li><strong>Notas adicionales:</strong> '+p.notas.replace(/\n/g,' ')+'</li>':''}
-        </ul>
-      </div>
+  <!-- CONDICIONES Y OBSERVACIONES -->
+  <div class="pdf-bottom">
+    <div>
+      <div class="pdf-bottom-head"><span class="ic">📋</span> Condiciones Comerciales</div>
+      <ul>
+        <li><strong>Forma de pago:</strong> 50% inicial para iniciar la fabricación, 30% contra avance de obra y 20% contra entrega del trabajo terminado.</li>
+        <li><strong>Tiempo de entrega:</strong> a acordar con el cliente.</li>
+        <li><strong>Validez de la oferta:</strong> 15 días calendario.</li>
+        <li><strong>Garantía:</strong> 30 días calendario por mano de obra e instalación.</li>
+        <li>La cotización incluye todos los materiales, repuestos y mano de obra necesarios para la ejecución del trabajo.</li>
+        <li>Esta cotización no incluye IVA.</li>
+      </ul>
     </div>
+    <div>
+      <div class="pdf-bottom-head"><span class="ic">👁️</span> Observaciones</div>
+      <ul>
+        <li>El tiempo de ejecución puede variar según la disponibilidad de acceso al área de trabajo y confirmación del anticipo.</li>
+        <li>La propuesta no incluye trabajos adicionales no especificados en el objeto de la cotización.</li>
+        <li>Los precios son referenciales y pueden ajustarse según condiciones especiales del proyecto.</li>
+        ${p.notas?'<li><strong>Notas adicionales:</strong> '+p.notas.replace(/\n/g,' ')+'</li>':''}
+      </ul>
+    </div>
+  </div>
 
-    <div class="accept-box">
-      <h4>✍️ Aceptación de la Cotización</h4>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-top:12px;">
-        <div><div class="sign-line"></div><div class="sign-label">Nombre</div></div>
-        <div><div class="sign-line"></div><div class="sign-label">Cargo</div></div>
-        <div><div class="sign-line"></div><div class="sign-label">Firma</div></div>
-      </div>
-      <div style="margin-top:12px;"><div class="sign-line" style="max-width:200px;"></div><div class="sign-label">Fecha</div></div>
+  <!-- FIRMAS -->
+  <div class="pdf-signs">
+    <div>
+      <div class="pdf-sign-head"><span class="ic">✍️</span> Atentamente</div>
+      <div class="pdf-sign-manual">${emp.realizadoPor||''}</div>
+      <div class="pdf-sign-name">${emp.realizadoPor||''}</div>
+      <div class="pdf-sign-sub">Realizado por ${emp.nombre||'NOVAGLASS'}</div>
     </div>
+    <div>
+      <div class="pdf-sign-head"><span class="ic">🤝</span> Aceptación de la Cotización</div>
+      <div class="pdf-sign-row"><span class="lbl">Nombre:</span><span class="line"></span></div>
+      <div class="pdf-sign-row"><span class="lbl">Cargo:</span><span class="line"></span></div>
+      <div class="pdf-sign-row"><span class="lbl">Firma:</span><span class="line"></span></div>
+      <div class="pdf-sign-row"><span class="lbl">Fecha:</span><span class="line"></span></div>
+    </div>
+  </div>
 
-    <div class="atentamente-box">
-      <p style="margin-bottom:8px;">Atentamente,</p>
-      <div class="firma-line"></div>
-      <div class="firma-nombre">${emp.realizadoPor||''}</div>
-      <div class="firma-empresa">Realizado por ${emp.nombre||'NOVAGLASS'}</div>
-    </div>
+  <!-- FOOTER CONTACTO -->
+  <div class="pdf-footer">
+    ${emp.telefono?('<div class="pdf-footer-item"><span class="ic">📞</span> '+emp.telefono+'</div>'):''}
+    ${emp.correo?('<div class="pdf-footer-item"><span class="ic">✉️</span> '+emp.correo+'</div>'):''}
+    ${emp.direccion?('<div class="pdf-footer-item"><span class="ic">📍</span> '+emp.direccion+'</div>'):''}
+    <div class="pdf-footer-item"><span class="ic">📷</span> @novaglass</div>
+  </div>
 
-    <div class="footer-pdf">
-      <p><strong>${emp.nombre||'NOVAGLASS'}</strong> — Aluminio, Vidrio y Acero Inoxidable</p>
-      <p>Cotización generada el ${new Date().toLocaleDateString('es-CO')} | Validez: 15 días</p>
-      <div class="footer-icons">
-        ${emp.telefono?('<div class="footer-icon-item">📞 '+emp.telefono+'</div>'):''}
-        ${emp.correo?('<div class="footer-icon-item">✉️ '+emp.correo+'</div>'):''}
-        ${emp.direccion?('<div class="footer-icon-item">📍 '+emp.direccion+'</div>'):''}
-      </div>
-    </div>
-    </body></html>`;
+  <!-- SERVICIOS -->
+  <div class="pdf-services">
+    <div class="pdf-service"><span class="ic">🪟</span><span>Ventanas<br>en Aluminio</span></div>
+    <div class="pdf-service"><span class="ic">🚪</span><span>Puertas<br>en Aluminio</span></div>
+    <div class="pdf-service"><span class="ic">🏢</span><span>Fachadas en<br>Vidrio Templado</span></div>
+    <div class="pdf-service"><span class="ic">🚿</span><span>Divisiones<br>de Baño</span></div>
+    <div class="pdf-service"><span class="ic">🔗</span><span>Barandas<br>en Vidrio y Acero</span></div>
+    <div class="pdf-service"><span class="ic">🏗️</span><span>Estructuras<br>Metálicas</span></div>
+  </div>
+
+  </body></html>`;
 
   const w=window.open('','_blank');
   w.document.write(html);
