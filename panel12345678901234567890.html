@@ -82,11 +82,18 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary-
 .checkbox-group input{width:20px;height:20px;}
 .checkbox-group label{margin:0;font-weight:500;}
 footer{text-align:center;padding:24px;color:var(--text-light);font-size:0.8rem;}
+.pin-gate-overlay{position:fixed;inset:0;background:linear-gradient(135deg,var(--primary) 0%,var(--primary-light) 100%);display:flex;align-items:center;justify-content:center;z-index:5000;padding:20px;}
+.pin-gate-box{background:white;border-radius:20px;padding:36px 28px;max-width:340px;width:100%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.3);}
+.pin-gate-box .logo{font-size:2.4rem;margin-bottom:8px;}
+.pin-gate-box h1{font-size:1.4rem;font-weight:800;color:var(--primary);letter-spacing:-0.5px;}
+.pin-gate-box p{color:var(--text-light);font-size:0.85rem;margin:6px 0 20px;}
+.pin-gate-box input{text-align:center;font-size:1.6rem;letter-spacing:10px;font-weight:700;padding:14px;}
+.pin-gate-box .pin-error{color:var(--danger);font-size:0.85rem;margin-top:10px;display:none;}
+.pin-gate-box .pin-error.active{display:block;}
 ::-webkit-scrollbar{width:8px;}
 ::-webkit-scrollbar-track{background:#f1f5f9;}
 ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:4px;}
 ::-webkit-scrollbar-thumb:hover{background:#94a3b8;}
-/* Tablas del informe */
 .report-table{width:100%;border-collapse:collapse;font-size:0.85rem;margin:10px 0;}
 .report-table th,.report-table td{padding:8px 10px;text-align:left;border-bottom:1px solid #e2e8f0;}
 .report-table th{background:#f1f5f9;font-weight:700;color:#0f172a;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;}
@@ -99,8 +106,20 @@ footer{text-align:center;padding:24px;color:var(--text-light);font-size:0.8rem;}
 .report-total-row{background:#f8fafc;font-weight:700;}
 </style>
 <base target="_blank">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
+
+<div class="pin-gate-overlay" id="pinGate">
+  <div class="pin-gate-box">
+    <div class="logo">🔷</div>
+    <h1>NOVAGLASS</h1>
+    <p>Ingresa el código de acceso para continuar</p>
+    <input type="password" id="pinInput" maxlength="6" inputmode="numeric" pattern="[0-9]*" placeholder="••••" autocomplete="off">
+    <button class="btn btn-primary btn-block" style="margin-top:14px;" onclick="verificarPin()">🔓 Ingresar</button>
+    <div class="pin-error" id="pinError">Código incorrecto, intenta de nuevo.</div>
+  </div>
+</div>
 
 <header>
   <div class="logo">🔷</div>
@@ -280,6 +299,74 @@ footer{text-align:center;padding:24px;color:var(--text-light);font-size:0.8rem;}
 </div>
 
 <script>
+/* ============================================================
+   CONTROL DE ACCESO POR PIN
+   ============================================================ */
+const PIN_ACCESO="2427";
+function verificarAccesoPin(){
+  if(localStorage.getItem('novaglass_pin_ok')==='1'){
+    document.getElementById('pinGate').style.display='none';
+  }
+}
+function verificarPin(){
+  const val=document.getElementById('pinInput').value;
+  if(val===PIN_ACCESO){
+    localStorage.setItem('novaglass_pin_ok','1');
+    document.getElementById('pinGate').style.display='none';
+    document.getElementById('pinError').classList.remove('active');
+  }else{
+    document.getElementById('pinError').classList.add('active');
+    document.getElementById('pinInput').value='';
+    document.getElementById('pinInput').focus();
+  }
+}
+document.getElementById('pinInput').addEventListener('keydown',function(e){if(e.key==='Enter')verificarPin();});
+verificarAccesoPin();
+
+/* ============================================================
+   CONEXIÓN A SUPABASE
+   ============================================================ */
+const SUPABASE_URL="https://trpnxkqxzeofwcvjyenq.supabase.co";
+const SUPABASE_KEY="sb_publishable_kUMFnWRmeIp49ZYTvH-vNw_xStmNpKC";
+let sb=null;
+try{ sb=window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY); }catch(e){ console.warn('Supabase no disponible',e); }
+
+async function cargarTodoDesdeNube(){
+  try{
+    if(!sb) throw new Error('Cliente Supabase no inicializado');
+    // Empresa
+    const { data:empData, error:empErr } = await sb.from('empresa').select('data').eq('id',1).maybeSingle();
+    if(!empErr && empData && empData.data){
+      empresa = Object.assign({}, EMPRESA_DEFAULT, empData.data);
+      localStorage.setItem('novaglass_empresa', JSON.stringify(empresa));
+    }
+    // Proyectos
+    const { data:proys, error:proyErr } = await sb.from('proyectos').select('id,data').order('updated_at',{ascending:false});
+    if(!proyErr && proys){
+      proyectos = proys.map(r=>({ ...r.data, id: r.id }));
+      localStorage.setItem('novaglass_proyectos', JSON.stringify(proyectos));
+    }
+  }catch(e){ console.warn('Sin conexión a Supabase, uso datos locales.', e); }
+  renderEmpresaResumen();
+  renderProyectos();
+}
+
+async function sincronizarProyecto(p){
+  try{
+    if(!sb) return;
+    const { error } = await sb.from('proyectos').upsert({ id:p.id, data:p, updated_at:new Date().toISOString() });
+    if(error) console.warn('Error sincronizando proyecto:', error);
+  }catch(e){ console.warn('No se pudo sincronizar proyecto con la nube.', e); }
+}
+
+async function sincronizarEmpresa(){
+  try{
+    if(!sb) return;
+    const { error } = await sb.from('empresa').upsert({ id:1, data:empresa, updated_at:new Date().toISOString() });
+    if(error) console.warn('Error sincronizando empresa:', error);
+  }catch(e){ console.warn('No se pudo sincronizar empresa con la nube.', e); }
+}
+
 const LARGO_BARRA=6.0;
 const LAMINA_ANCHO=3.30;
 const LAMINA_ALTO=2.14;
@@ -320,7 +407,7 @@ const VIDRIOS={
   laminado_33_incoloro:{nombre:"Laminado 3+3 Incoloro",precio:390000,espesor:6},
   laminado_33_gris:{nombre:"Laminado 3+3 Gris",precio:650000,espesor:6},
   templado_8mm:{nombre:"Vidrio Templado 8mm",precio:850000,espesor:8},
-  templado_10mm:{nombre:"Vidrio Templado 10mm",precio:150000,espesor:10},
+  templado_10mm:{nombre:"Vidrio Templado 10mm",precio:1500000,espesor:10},
 };
 
 const ACCESORIOS={
@@ -333,16 +420,10 @@ const ACCESORIOS={
   dumi_udinese:{nombre:"Dumi Udinese Seguro",precio:13900,unidad:"ud"},
 };
 
-const KERF_CORTE=0.005; // espacio de corte entre piezas de vidrio (5mm)
+const KERF_CORTE=0.005;
 const COLORES_PIEZA=['#3b82f6','#f59e0b','#10b981','#ef4444','#8b5cf6','#06b6d4','#f97316','#ec4899','#84cc16','#6366f1'];
 const EPS_PACK=1e-6;
 
-/* ============================================================
-   EMPAQUETADO 2D DE VIDRIO — Cortes Guillotina
-   Método: Guillotine Best-Area-Fit + regla de corte SLAS
-   (Shorter Leftover Axis Split), con rotación de piezas 90°.
-   Referencia: Jylänki, "A Thousand Ways to Pack the Bin" (2010).
-   ============================================================ */
 class GuillotinePacker{
   constructor(sheetW,sheetH,kerf){this.sheetW=sheetW;this.sheetH=sheetH;this.kerf=kerf||0;this.sheets=[];}
   _newSheet(){this.sheets.push({freeRects:[{x:0,y:0,w:this.sheetW,h:this.sheetH}],placements:[]});return this.sheets[this.sheets.length-1];}
@@ -384,12 +465,6 @@ class GuillotinePacker{
   }
 }
 
-// Empaqueta piezas {w,h,label,sourceIndex,sourceLabel} en hojas sheetW x sheetH.
-// Prueba varias estrategias de orden (área, lado mayor, lado menor, perímetro)
-// y se queda con la que use menos láminas. Luego aplica un paso de consolidación
-// que intenta vaciar láminas con pocas piezas reubicándolas en las demás, para
-// eliminar láminas mal aprovechadas que hayan quedado sueltas.
-// Piezas que no caben en ninguna orientación se devuelven en piezasEspeciales.
 function empacarVidrio(piezas,sheetW,sheetH,kerf){
   const normales=[],especiales=[];
   piezas.forEach(p=>{
@@ -399,10 +474,10 @@ function empacarVidrio(piezas,sheetW,sheetH,kerf){
   });
   if(normales.length===0)return{sheets:[],laminas:0,areaUsada:0,areaComprada:0,piezasEspeciales:especiales};
   const estrategiasOrden=[
-    (a,b)=>(b.w*b.h)-(a.w*a.h),                 // área descendente
-    (a,b)=>Math.max(b.w,b.h)-Math.max(a.w,a.h), // lado mayor descendente
-    (a,b)=>Math.min(b.w,b.h)-Math.min(a.w,a.h), // lado menor descendente
-    (a,b)=>(2*(b.w+b.h))-(2*(a.w+a.h)),         // perímetro descendente
+    (a,b)=>(b.w*b.h)-(a.w*a.h),
+    (a,b)=>Math.max(b.w,b.h)-Math.max(a.w,a.h),
+    (a,b)=>Math.min(b.w,b.h)-Math.min(a.w,a.h),
+    (a,b)=>(2*(b.w+b.h))-(2*(a.w+a.h)),
   ];
   let mejor=null;
   estrategiasOrden.forEach(cmp=>{
@@ -420,9 +495,6 @@ function empacarVidrio(piezas,sheetW,sheetH,kerf){
   return{sheets,laminas:sheets.length,areaUsada,areaComprada,piezasEspeciales:especiales};
 }
 
-// Intenta eliminar láminas mal aprovechadas: para cada lámina (empezando por
-// las que tienen menos piezas), intenta reubicar TODAS sus piezas dentro de
-// las demás láminas ya existentes. Si lo logra, esa lámina se elimina.
 function consolidarLaminas(sheetsIniciales,sheetW,sheetH,kerf){
   let activas=sheetsIniciales.map(s=>({freeRects:s.freeRects.map(r=>({...r})),placements:s.placements.map(p=>({...p}))}));
   let cambiado=true;
@@ -480,6 +552,7 @@ function guardarEmpresa(){
     direccion:document.getElementById('emp-direccion').value
   };
   localStorage.setItem('novaglass_empresa',JSON.stringify(empresa));
+  sincronizarEmpresa();
   document.getElementById('empresaForm').style.display='none';
   renderEmpresaResumen();
   alert('Datos de la empresa guardados ✅');
@@ -622,10 +695,6 @@ function guardarItem(){
   renderItems();
   renderResumen();
 }
-
-/* ============================================================
-   DESGLOSE POR ÍTEM — devuelve piezas, vidrio, accesorios y otros
-   ============================================================ */
 
 function desgloseVentana8025(d){
   const ancho=d.ancho,alto=d.alto,diseno=d.diseno;
@@ -773,8 +842,6 @@ function desgloseBarandaAcero(d){
   const pTubo12=d.precio_tubo_1_2||35000;
   const pTermLibre=d.precio_terminal_libre||2000;
   const pTermMuro=d.precio_terminal_muro||7000;
-  // 4 tubos horizontales de 1/2" corren el largo total de la baranda (tramos × su
-  // propio largo = largo total), independientemente de en cuántos tramos se divida.
   const totalMetrosTubo12=4*metros;
   const terminalesMuro=(muroIzq?4:0)+(muroDer?4:0);
   const terminalesLibres=(tramos*8)-terminalesMuro;
@@ -821,13 +888,8 @@ function calcularDesgloseItem(tipo,d){
   return{piezasAluminio:[],vidrio:null,accesorios:[],costoAccesorios:0,otros:[]};
 }
 
-/* ============================================================
-   CÁLCULO GLOBAL — Costos optimizados + Materiales para informe
-   ============================================================ */
-
 function calcularCostosGlobales(p){
   const desgloses=p.items.map(it=>{const d=calcularDesgloseItem(it.tipo,it.datos);return{...d,cantidad:it.cantidad,tipo:it.tipo,datos:it.datos};});
-  // Aluminio global
   const aluminioGlobal={};
   desgloses.forEach(d=>{
     d.piezasAluminio.forEach(pz=>{
@@ -838,9 +900,6 @@ function calcularCostosGlobales(p){
   });
   let costoAluminioGlobal=0;
   Object.values(aluminioGlobal).forEach(g=>{const barras=Math.ceil(g.totalMetros/LARGO_BARRA);costoAluminioGlobal+=barras*g.precioBarra;});
-  // Vidrio global — se mantiene el m² bruto (usado como base para el factor de
-  // optimización) y además se calcula el empaquetado 2D real por tipo de vidrio,
-  // que es lo que determina el costo real de láminas (paquetesVidrio).
   const vidrioGlobal={};
   const poolVidrioPorTipo={};
   desgloses.forEach((d,idxItem)=>{
@@ -867,16 +926,10 @@ function calcularCostosGlobales(p){
   Object.keys(poolVidrioPorTipo).forEach(key=>{
     const grupo=poolVidrioPorTipo[key];
     const resultado=empacarVidrio(grupo.piezas,LAMINA_ANCHO,LAMINA_ALTO,KERF_CORTE);
-    // Piezas que no caben en ninguna orientación en una lámina estándar:
-    // se estima 1 lámina especial por pieza como mínimo (requiere pedido especial al proveedor).
     const costoEspeciales=resultado.piezasEspeciales.length*grupo.precioLamina;
     costoVidrioGlobal+=resultado.laminas*grupo.precioLamina+costoEspeciales;
     paquetesVidrio[key]={tipo:key,nombre:grupo.nombre,precioLamina:grupo.precioLamina,...resultado};
   });
-  // Acero global (tubos 2" y 1/2") — mismo principio que el aluminio: se suman
-  // los metros necesitados por TODOS los ítems que usan cada tipo de tubo (agrupando
-  // también por precio, por si algún ítem tiene un precio distinto editado a mano)
-  // y se redondea a barras de 6m una sola vez para todo el proyecto.
   const aceroGlobal={};
   desgloses.forEach(d=>{
     (d.piezasAcero||[]).forEach(pz=>{
@@ -898,7 +951,6 @@ function calcularCostosGlobales(p){
   let costoIndividualAcero=0;
   desgloses.forEach(d=>{costoIndividualAcero+=costoAceroIndividualDeItem(d)*d.cantidad;});
   const factorOptimizacionAcero=costoIndividualAcero>0?costoAceroGlobal/costoIndividualAcero:1;
-  // Costo individual sin optimizar (para factor)
   let costoIndividualAluminioVidrio=0;
   desgloses.forEach(d=>{
     const tieneOpt=d.piezasAluminio.length>0||d.vidrio;
@@ -914,7 +966,6 @@ function calcularCostosGlobales(p){
   });
   const costoGlobalAluminioVidrio=costoAluminioGlobal+costoVidrioGlobal;
   const factorOptimizacion=costoIndividualAluminioVidrio>0?costoGlobalAluminioVidrio/costoIndividualAluminioVidrio:1;
-  // Precios finales por ítem
   const itemsConPrecio=p.items.map((it,idx)=>{
     const d=desgloses[idx];
     const tieneOpt=d.piezasAluminio.length>0||d.vidrio;
@@ -947,7 +998,6 @@ function calcularCostosGlobales(p){
 
 function calcularMaterialesProyecto(p){
   const{costoAluminioGlobal,costoVidrioGlobal,aluminioGlobal,aceroGlobal,paquetesVidrio,desgloses}=calcularCostosGlobales(p);
-  // Aluminio detallado
   const aluminio=[];
   Object.values(aluminioGlobal).forEach(g=>{
     const barras=Math.ceil(g.totalMetros/LARGO_BARRA);
@@ -962,8 +1012,6 @@ function calcularMaterialesProyecto(p){
       pctDesperdicio,costo:barras*g.precioBarra
     });
   });
-  // Vidrio detallado — ahora a partir del empaquetado 2D real (cortes guillotina),
-  // no de un redondeo estimado. Ver paquetesVidrio para el plano de cortes completo.
   const vidrio=[];
   Object.values(paquetesVidrio).forEach(g=>{
     const laminasEspeciales=g.piezasEspeciales.length;
@@ -978,7 +1026,6 @@ function calcularMaterialesProyecto(p){
       piezasEspeciales:laminasEspeciales
     });
   });
-  // Acero detallado (tubos 2" y 1/2") — optimizado globalmente entre todos los ítems
   const acero=[];
   Object.values(aceroGlobal).forEach(g=>{
     const barras=Math.ceil(g.totalMetros/LARGO_BARRA);
@@ -992,7 +1039,6 @@ function calcularMaterialesProyecto(p){
       pctDesperdicio,costo:barras*g.precioBarra
     });
   });
-  // Accesorios agrupados
   const accMap={};
   desgloses.forEach(d=>{
     d.accesorios.forEach(acc=>{
@@ -1002,7 +1048,6 @@ function calcularMaterialesProyecto(p){
     });
   });
   const accesorios=Object.values(accMap).map(a=>({...a,cantidad:Math.round(a.cantidad*100)/100,costoTotal:Math.round(a.cantidad*a.precioUnitario)}));
-  // Otros materiales (barandas, divisiones)
   const otrosMap={};
   desgloses.forEach(d=>{
     if(d.otros){
@@ -1015,7 +1060,6 @@ function calcularMaterialesProyecto(p){
     }
   });
   const otros=Object.values(otrosMap).map(o=>({...o,cantidad:Math.round(o.cantidad*100)/100,costoTotal:Math.round(o.cantidad*o.precioUnitario)}));
-  // Totales
   const totalAluminio=aluminio.reduce((s,a)=>s+a.costo,0);
   const totalVidrio=vidrio.reduce((s,v)=>s+v.costo,0);
   const totalAcero=acero.reduce((s,a)=>s+a.costo,0);
@@ -1061,16 +1105,9 @@ function guardarProyecto(){
   if(idx>=0)proyectos[idx]=JSON.parse(JSON.stringify(proyectoActual));
   else proyectos.push(JSON.parse(JSON.stringify(proyectoActual)));
   localStorage.setItem('novaglass_proyectos',JSON.stringify(proyectos));
+  sincronizarProyecto(proyectoActual);
   alert('Proyecto guardado correctamente ✅');
 }
-
-/* ============================================================
-   INFORME DE MATERIALES
-   ============================================================ */
-
-/* ============================================================
-   PLANO DE CORTES — Visualización SVG del empaquetado de vidrio
-   ============================================================ */
 
 function colorPorIndice(i){return COLORES_PIEZA[i%COLORES_PIEZA.length];}
 
@@ -1085,12 +1122,10 @@ function generarSVGLamina(sheet,numeroLamina,escalaPx){
     const color=colorPorIndice(pl.sourceIndex);
     svg+=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${pw.toFixed(1)}" height="${ph.toFixed(1)}" fill="${color}" fill-opacity="0.75" stroke="#0f172a" stroke-width="1.5"/>`;
     svg+=`<title>${escapeHtml(pl.sourceLabel||'')} — ${escapeHtml(pl.label||'')} (${pl.w.toFixed(2)}×${pl.h.toFixed(2)}m)${pl.rotated?' — rotada 90°':''}</title>`;
-    // Etiqueta de medida centrada (si hay espacio)
     if(pw>34&&ph>18){
       const fs=Math.max(9,Math.min(13,pw/9));
       svg+=`<text x="${(x+pw/2).toFixed(1)}" y="${(y+ph/2).toFixed(1)}" text-anchor="middle" dominant-baseline="middle" font-size="${fs}" font-weight="700" fill="#0f172a" font-family="Arial,sans-serif">${pl.w.toFixed(2)}×${pl.h.toFixed(2)}</text>`;
     }
-    // Número de orden de corte
     if(pw>16&&ph>16){
       svg+=`<circle cx="${(x+11).toFixed(1)}" cy="${(y+11).toFixed(1)}" r="9" fill="#0f172a"/>`;
       svg+=`<text x="${(x+11).toFixed(1)}" y="${(y+11).toFixed(1)}" text-anchor="middle" dominant-baseline="middle" font-size="9" font-weight="700" fill="white" font-family="Arial,sans-serif">${i+1}</text>`;
@@ -1116,7 +1151,6 @@ function renderPlanoCortesHTML(paquetesVidrio,escalaPx){
   tipos.forEach(g=>{
     html+=`<div style="margin-bottom:22px;">`;
     html+=`<h4 style="font-size:0.9rem;color:#0f172a;margin-bottom:8px;">${g.nombre} — ${g.laminas} lámina${g.laminas!==1?'s':''}${g.piezasEspeciales.length>0?' + '+g.piezasEspeciales.length+' especial(es)':''}</h4>`;
-    // Leyenda de ítems de origen (por color)
     const legendMap={};
     g.sheets.forEach(s=>s.placements.forEach(pl=>{if(pl.sourceLabel)legendMap[pl.sourceIndex]=pl.sourceLabel;}));
     const legendKeys=Object.keys(legendMap);
@@ -1158,7 +1192,6 @@ function renderInformeMateriales(){
   const p=proyectoActual;
   const mat=calcularMaterialesProyecto(p);
   let html='';
-  // Aluminio
   if(mat.aluminio.length>0){
     html+=`<div class="report-section"><h3>🔩 Aluminio — Optimización Global</h3>`;
     html+=`<table class="report-table"><thead><tr><th>Sistema</th><th>Referencia</th><th>Nombre</th><th>Acabado</th><th class="text-right">Metros Usados</th><th class="text-right">Barras (6m)</th><th class="text-right">Metros Comprados</th><th class="text-right">Desperdicio</th><th class="text-right">%</th><th class="text-right">Costo</th></tr></thead><tbody>`;
@@ -1168,7 +1201,6 @@ function renderInformeMateriales(){
     html+=`<tr class="report-total-row"><td colspan="9">Total Aluminio</td><td class="text-right">${formatMoney(mat.totalAluminio)}</td></tr>`;
     html+=`</tbody></table></div>`;
   }
-  // Vidrio
   if(mat.vidrio.length>0){
     html+=`<div class="report-section"><h3>🪟 Vidrio — Optimización Global</h3>`;
     html+=`<table class="report-table"><thead><tr><th>Tipo</th><th class="text-right">m² Usados</th><th class="text-right">Láminas</th><th class="text-right">m² Comprados</th><th class="text-right">m² Desperdicio</th><th class="text-right">%</th><th class="text-right">Costo</th></tr></thead><tbody>`;
@@ -1178,9 +1210,7 @@ function renderInformeMateriales(){
     html+=`<tr class="report-total-row"><td colspan="6">Total Vidrio</td><td class="text-right">${formatMoney(mat.totalVidrio)}</td></tr>`;
     html+=`</tbody></table></div>`;
   }
-  // Plano de cortes de vidrio (empaquetado 2D real)
   html+=renderPlanoCortesHTML(mat.paquetesVidrio,150);
-  // Acero (tubos 2" y 1/2") — optimizado globalmente
   if(mat.acero.length>0){
     html+=`<div class="report-section"><h3>🔧⚙️ Tubos de Acero — Optimización Global</h3>`;
     html+=`<div class="alert alert-info">Los metros necesarios de cada tipo de tubo se suman entre TODOS los ítems del proyecto (barandillas, barandas acero+vidrio) antes de redondear a barras de 6m, para no comprar barras de más por calcular cada ítem por separado.</div>`;
@@ -1191,7 +1221,6 @@ function renderInformeMateriales(){
     html+=`<tr class="report-total-row"><td colspan="6">Total Tubos de Acero</td><td class="text-right">${formatMoney(mat.totalAcero)}</td></tr>`;
     html+=`</tbody></table></div>`;
   }
-  // Accesorios
   if(mat.accesorios.length>0){
     html+=`<div class="report-section"><h3>🔧 Accesorios</h3>`;
     html+=`<table class="report-table"><thead><tr><th>Nombre</th><th class="text-right">Cantidad</th><th>Unidad</th><th class="text-right">Precio Unit.</th><th class="text-right">Costo Total</th></tr></thead><tbody>`;
@@ -1201,7 +1230,6 @@ function renderInformeMateriales(){
     html+=`<tr class="report-total-row"><td colspan="4">Total Accesorios</td><td class="text-right">${formatMoney(mat.totalAccesorios)}</td></tr>`;
     html+=`</tbody></table></div>`;
   }
-  // Otros materiales
   if(mat.otros.length>0){
     html+=`<div class="report-section"><h3>📦 Otros Materiales (Barandas / Divisiones)</h3>`;
     html+=`<table class="report-table"><thead><tr><th>Nombre</th><th class="text-right">Cantidad</th><th>Unidad</th><th class="text-right">Precio Unit.</th><th class="text-right">Costo Total</th><th>Nota</th></tr></thead><tbody>`;
@@ -1211,7 +1239,6 @@ function renderInformeMateriales(){
     html+=`<tr class="report-total-row"><td colspan="4">Total Otros Materiales</td><td class="text-right">${formatMoney(mat.totalOtros)}</td><td></td></tr>`;
     html+=`</tbody></table></div>`;
   }
-  // Resumen final
   html+=`<div class="report-section" style="background:linear-gradient(135deg,#0f172a,#1e3a5f);color:white;padding:20px;border-radius:16px;margin-top:20px;">`;
   html+=`<h3 style="color:white;margin-bottom:12px;">📊 Resumen General de Materiales</h3>`;
   html+=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;">`;
@@ -1299,269 +1326,4 @@ function exportarInformePDF(){
   html+=`<div class="summary-item"><div class="label">COSTO MATERIALES</div><div class="value">${formatMoney(mat.costoMateriales)}</div></div>`;
   html+=`<div class="summary-item"><div class="label">COSTO TOTAL</div><div class="value">${formatMoney(mat.costoTotal)}</div></div>`;
   html+=`<div class="summary-item"><div class="label">UTILIDAD (${p.utilidad}%)</div><div class="value">${formatMoney(mat.utilidad)}</div></div>`;
-  html+=`<div class="summary-item"><div class="label">PRECIO FINAL</div><div class="value" style="color:#fbbf24;font-size:1.2rem;">${formatMoney(mat.precioFinal)}</div></div>`;
-  html+=`</div></div><div class="footer"><p>NOVAGLASS — Informe generado el ${new Date().toLocaleDateString('es-CO')}</p></div></body></html>`;
-  const w=window.open('','_blank');
-  w.document.write(html);
-  w.document.close();
-  w.print();
-}
-
-function exportarPDF(){
-  leerProyectoDelFormulario();
-  const p=proyectoActual;
-  const{itemsConPrecio,precioFinalProyecto}=calcularCostosGlobales(p);
-  const emp=empresa;
-
-  let html=`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Cotización NOVAGLASS</title>
-    <style>
-      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
-      body{font-family:'Inter',Arial,sans-serif;max-width:900px;margin:20px auto;padding:20px;color:#1e293b;background:#fff}
-      .header-top{background:linear-gradient(135deg,#0f172a,#1e3a5f);color:white;padding:32px 28px;border-radius:0 0 24px 24px;display:flex;justify-content:space-between;align-items:center;}
-      .header-top .brand{display:flex;align-items:center;gap:14px;}
-      .header-top .brand-icon{font-size:2.8rem;}
-      .header-top .brand-text h1{margin:0;font-size:1.9rem;font-weight:800;letter-spacing:-0.5px;}
-      .header-top .brand-text p{margin:4px 0 0;opacity:0.85;font-size:0.85rem;}
-      .header-top .cot-info{text-align:right;}
-      .header-top .cot-info .cot-label{font-size:0.75rem;opacity:0.8;text-transform:uppercase;letter-spacing:1px;}
-      .header-top .cot-info .cot-num{font-size:1.4rem;font-weight:800;color:#f59e0b;margin-top:4px;}
-      .header-top .cot-info .cot-date{font-size:0.85rem;opacity:0.9;margin-top:4px;}
-      .header-top .cot-info .cot-nit{font-size:0.8rem;opacity:0.8;margin-top:2px;}
-      .section-title{background:#0f172a;color:white;display:inline-block;padding:6px 18px;border-radius:20px;font-size:0.8rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin:24px 0 14px;}
-      .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:14px 0;}
-      .info-box{background:#f8fafc;padding:14px 18px;border-radius:12px;border:1px solid #e2e8f0;}
-      .info-box .label{font-size:0.7rem;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;}
-      .info-box .value{font-size:0.95rem;font-weight:700;color:#0f172a;margin-top:4px;}
-      .objeto-box{background:#f8fafc;padding:16px 18px;border-radius:12px;border:1px solid #e2e8f0;font-size:0.9rem;line-height:1.6;}
-      table{width:100%;border-collapse:collapse;margin:12px 0;font-size:0.85rem;}
-      th,td{padding:10px 8px;text-align:left;border-bottom:1px solid #e2e8f0;}
-      th{background:#0f172a;color:white;font-weight:700;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.5px;}
-      .text-right{text-align:right;}
-      .text-center{text-align:center;}
-      .badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:0.65rem;font-weight:700;background:#dbeafe;color:#1d4ed8;}
-      .total-box{background:linear-gradient(135deg,#0f172a,#1e3a5f);color:white;padding:28px;border-radius:16px;text-align:center;margin-top:24px;}
-      .total-box .label{font-size:0.85rem;opacity:0.9;text-transform:uppercase;letter-spacing:1px;}
-      .total-box .price{font-size:2.4rem;font-weight:800;margin-top:8px;color:#f59e0b;}
-      .total-box .price-letters{font-size:0.85rem;opacity:0.85;margin-top:6px;}
-      .two-col{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px;}
-      .cond-box{background:#f8fafc;padding:16px;border-radius:12px;border:1px solid #e2e8f0;font-size:0.85rem;}
-      .cond-box h4{margin:0 0 10px;font-size:0.8rem;color:#0f172a;text-transform:uppercase;letter-spacing:0.5px;}
-      .cond-box ul{margin:0;padding-left:18px;}
-      .cond-box li{margin-bottom:6px;}
-      .accept-box{border:2px solid #e2e8f0;padding:16px;border-radius:12px;margin-top:20px;}
-      .accept-box h4{margin:0 0 12px;font-size:0.8rem;color:#0f172a;text-transform:uppercase;letter-spacing:0.5px;}
-      .sign-line{border-bottom:1px solid #94a3b8;height:28px;margin-bottom:4px;}
-      .sign-label{font-size:0.75rem;color:#64748b;}
-      .atentamente-box{margin-top:24px;font-size:0.85rem;}
-      .atentamente-box .firma-line{border-bottom:1px solid #94a3b8;width:220px;height:40px;margin-bottom:4px;}
-      .atentamente-box .firma-nombre{font-weight:700;color:#0f172a;}
-      .atentamente-box .firma-empresa{color:#64748b;font-size:0.8rem;}
-      .footer-pdf{text-align:center;color:#94a3b8;font-size:0.75rem;margin-top:32px;padding-top:20px;border-top:2px solid #f1f5f9;}
-      .footer-icons{display:flex;justify-content:center;gap:24px;margin-top:12px;flex-wrap:wrap;}
-      .footer-icon-item{display:flex;align-items:center;gap:6px;font-size:0.75rem;color:#64748b;}
-      @media print{body{margin:0;padding:10px;}}
-    </style></head><body>
-    <div class="header-top">
-      <div class="brand">
-        <div class="brand-icon">🔷</div>
-        <div class="brand-text">
-          <h1>${emp.nombre||'NOVAGLASS'}</h1>
-          <p>Aluminio, Vidrio y Acero Inoxidable</p>
-        </div>
-      </div>
-      <div class="cot-info">
-        <div class="cot-label">Cotización</div>
-        <div class="cot-num">COT-${p.id.toString().slice(-6)}</div>
-        <div class="cot-date">📅 ${p.fecha}</div>
-        <div class="cot-nit">${emp.nit?('NIT: '+emp.nit):''}</div>
-      </div>
-    </div>
-
-    <div class="section-title">📋 Datos del Cliente</div>
-    <div class="info-grid">
-      <div class="info-box"><div class="label">Cliente</div><div class="value">${p.cliente||'N/A'}</div></div>
-      <div class="info-box"><div class="label">Proyecto / Dirección</div><div class="value">${p.nombre||'N/A'}</div></div>
-      <div class="info-box"><div class="label">Teléfono</div><div class="value">${p.telefono||'N/A'}</div></div>
-      <div class="info-box"><div class="label">Ciudad</div><div class="value">${p.ciudad||'N/A'}</div></div>
-    </div>
-
-    <div class="section-title">🏢 Datos del Ofertante</div>
-    <div class="info-grid">
-      <div class="info-box"><div class="label">Empresa</div><div class="value">${emp.nombre||'NOVAGLASS'}</div></div>
-      <div class="info-box"><div class="label">Dirección</div><div class="value">${emp.direccion||'N/A'}</div></div>
-      <div class="info-box"><div class="label">Correo</div><div class="value">${emp.correo||'N/A'}</div></div>
-      <div class="info-box"><div class="label">Teléfono</div><div class="value">${emp.telefono||'N/A'}</div></div>
-    </div>
-
-    <div class="section-title">📝 Objeto de la Cotización</div>
-    <div class="objeto-box">
-      Presentamos nuestra propuesta para el suministro, fabricación e instalación de los elementos descritos a continuación, garantizando materiales de alta calidad, acabados profesionales y cumplimiento en los tiempos de entrega acordados.
-    </div>
-
-    <div class="section-title">🔧 Ítems Cotizados</div>
-    <table>
-      <thead><tr><th>Ítem</th><th>Descripción</th><th>Medidas</th><th>Unidad</th><th>Cant.</th><th class="text-right">Vlr. Unitario</th><th class="text-right">Vlr. Total</th></tr></thead>
-      <tbody>`;
-  itemsConPrecio.forEach((it,i)=>{
-    let medidas='';
-    if(it.datos.ancho&&it.datos.alto)medidas=it.datos.ancho+' × '+it.datos.alto+' m';
-    else if(it.datos.metros)medidas=it.datos.metros+' m lineales';
-    html+=`<tr><td class="text-center">${i+1}</td><td><strong>${nombreItem(it)}</strong><br><span class="badge">${etiquetaTipo(it.tipo)}</span></td><td>${medidas}</td><td>Uds</td><td class="text-center">${it.cantidad}</td><td class="text-right">${formatMoney(it.precioFinalUnitario)}</td><td class="text-right">${formatMoney(it.precioFinalTotal)}</td></tr>`;
-  });
-  html+=`</tbody></table>
-
-    <div class="total-box">
-      <div class="label">Valor Total de la Cotización</div>
-      <div class="price">${formatMoney(precioFinalProyecto)}</div>
-      <div class="price-letters">${numeroALetras(Math.round(precioFinalProyecto))} PESOS M/CTE.</div>
-    </div>
-
-    <div class="two-col">
-      <div class="cond-box">
-        <h4>📌 Condiciones Comerciales</h4>
-        <ul>
-          <li>Forma de pago: 50% de anticipo para iniciar la fabricación y 50% contra entrega del trabajo terminado.</li>
-          <li>Tiempo de entrega: <strong>Se acuerda con el cliente</strong>.</li>
-          <li>Validez de la oferta: 15 días calendario.</li>
-          <li>Garantía: 30 días calendario por mano de obra e instalación.</li>
-          <li>La cotización incluye todos los materiales, repuestos y mano de obra necesarios para la ejecución del trabajo.</li>
-          <li>Esta cotización no incluye IVA.</li>
-        </ul>
-      </div>
-      <div class="cond-box">
-        <h4>🔍 Observaciones</h4>
-        <ul>
-          <li>El tiempo de ejecución puede variar según la disponibilidad de acceso al área de trabajo y confirmación del anticipo.</li>
-          <li>La propuesta no incluye trabajos adicionales no especificados en el objeto de la cotización.</li>
-          <li>Los precios son referenciales y pueden ajustarse según condiciones especiales del proyecto.</li>
-          ${p.notas?'<li><strong>Notas adicionales:</strong> '+p.notas.replace(/\n/g,' ')+'</li>':''}
-        </ul>
-      </div>
-    </div>
-
-    <div class="accept-box">
-      <h4>✍️ Aceptación de la Cotización</h4>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-top:12px;">
-        <div><div class="sign-line"></div><div class="sign-label">Nombre</div></div>
-        <div><div class="sign-line"></div><div class="sign-label">Cargo</div></div>
-        <div><div class="sign-line"></div><div class="sign-label">Firma</div></div>
-      </div>
-      <div style="margin-top:12px;"><div class="sign-line" style="max-width:200px;"></div><div class="sign-label">Fecha</div></div>
-    </div>
-
-    <div class="atentamente-box">
-      <p style="margin-bottom:8px;">Atentamente,</p>
-      <div class="firma-line"></div>
-      <div class="firma-nombre">${emp.realizadoPor||''}</div>
-      <div class="firma-empresa">Realizado por ${emp.nombre||'NOVAGLASS'}</div>
-    </div>
-
-    <div class="footer-pdf">
-      <p><strong>${emp.nombre||'NOVAGLASS'}</strong> — Aluminio, Vidrio y Acero Inoxidable</p>
-      <p>Cotización generada el ${new Date().toLocaleDateString('es-CO')} | Validez: 15 días</p>
-      <div class="footer-icons">
-        ${emp.telefono?('<div class="footer-icon-item">📞 '+emp.telefono+'</div>'):''}
-        ${emp.correo?('<div class="footer-icon-item">✉️ '+emp.correo+'</div>'):''}
-        ${emp.direccion?('<div class="footer-icon-item">📍 '+emp.direccion+'</div>'):''}
-      </div>
-    </div>
-    </body></html>`;
-
-  const w=window.open('','_blank');
-  w.document.write(html);
-  w.document.close();
-  w.print();
-}
-
-function compartirWhatsApp(){
-  leerProyectoDelFormulario();
-  const p=proyectoActual;
-  const{itemsConPrecio,precioFinalProyecto}=calcularCostosGlobales(p);
-  let msg='*Cotización '+(empresa.nombre||'NOVAGLASS')+'*%0A%0A';
-  msg+='*Cliente:* '+(p.cliente||'N/A')+'%0A';
-  msg+='*Proyecto:* '+(p.nombre||'N/A')+'%0A';
-  msg+='*Fecha:* '+p.fecha+'%0A%0A';
-  msg+='*Ítems:*%0A';
-  itemsConPrecio.forEach((it,i)=>{
-    msg+=(i+1)+'. '+nombreItem(it)+' x'+it.cantidad+' = '+formatMoney(it.precioFinalTotal)+'%0A';
-  });
-  msg+='%0A*PRECIO FINAL:* '+formatMoney(precioFinalProyecto)+'%0A%0A';
-  msg+='_'+(empresa.nombre||'NOVAGLASS')+' — Aluminio, Vidrio y Acero Inoxidable_';
-  window.open('https://wa.me/?text='+msg,'_blank');
-}
-
-function verDetalleItem(idx){
-  const it=proyectoActual.items[idx];
-  const{itemsConPrecio}=calcularCostosGlobales(proyectoActual);
-  const itPrecio=itemsConPrecio[idx];
-  document.getElementById('detalle-title').textContent='👁️ '+nombreItem(it);
-  let html=`<div style="margin-bottom:16px;"><span class="badge badge-blue">${etiquetaTipo(it.tipo)}</span> &nbsp; Cantidad: <strong>${it.cantidad}</strong></div>`;
-  html+=`<div style="background:#f8fafc;padding:14px;border-radius:10px;margin-bottom:16px;">`;
-  html+=`<div style="font-weight:700;margin-bottom:8px;color:var(--primary);">📐 Especificaciones</div>`;
-  Object.keys(it.datos||{}).forEach(k=>{
-    let label=k.replace(/_/g,' ').replace(/\b\w/g,l=>l.toUpperCase());
-    let val=it.datos[k];
-    if(typeof val==='boolean')val=val?'Sí':'No';
-    if(k==='vidrio'&&VIDRIOS[val])val=VIDRIOS[val].nombre;
-    if(k==='acabado')val=ACABADOS[parseInt(val)]||val;
-    if(k.startsWith('precio_'))label=label.replace('Precio ','');
-    html+=`<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #e2e8f0;font-size:0.9rem;"><span style="color:#64748b;">${label}</span><span style="font-weight:600;">${val}</span></div>`;
-  });
-  html+=`</div>`;
-  html+=`<div style="display:flex;gap:16px;">`;
-  html+=`<div style="flex:1;background:#f1f5f9;padding:14px;border-radius:10px;text-align:center;"><div style="font-size:0.75rem;color:#64748b;">PRECIO UNITARIO</div><div style="font-size:1.2rem;font-weight:700;color:var(--primary);">${formatMoney(itPrecio.precioFinalUnitario||0)}</div></div>`;
-  html+=`<div style="flex:1;background:linear-gradient(135deg,var(--primary),var(--primary-light));padding:14px;border-radius:10px;text-align:center;color:white;"><div style="font-size:0.75rem;opacity:0.9;">PRECIO TOTAL</div><div style="font-size:1.4rem;font-weight:800;">${formatMoney(itPrecio.precioFinalTotal||0)}</div></div>`;
-  html+=`</div>`;
-  document.getElementById('detalle-content').innerHTML=html;
-  document.getElementById('modal-detalle').classList.add('active');
-}
-
-function cerrarModalDetalle(){document.getElementById('modal-detalle').classList.remove('active');}
-
-function formatMoney(val){return '$'+Math.round(val).toLocaleString('es-CO');}
-
-function numeroALetras(numero){
-  const unidades=['','un','dos','tres','cuatro','cinco','seis','siete','ocho','nueve'];
-  const decenas=['','diez','veinte','treinta','cuarenta','cincuenta','sesenta','setenta','ochenta','noventa'];
-  const centenas=['','ciento','doscientos','trescientos','cuatrocientos','quinientos','seiscientos','setecientos','ochocientos','novecientos'];
-  const especiales={11:'once',12:'doce',13:'trece',14:'catorce',15:'quince',16:'dieciséis',17:'diecisiete',18:'dieciocho',19:'diecinueve',21:'veintiuno',22:'veintidós',23:'veintitrés',24:'veinticuatro',25:'veinticinco',26:'veintiséis',27:'veintisiete',28:'veintiocho',29:'veintinueve'};
-  function convertirGrupo(n,masculinoUn){
-    if(n===0)return'';
-    if(n===100)return'cien';
-    let c=Math.floor(n/100),d=Math.floor((n%100)/10),u=n%10;
-    let res='';
-    if(c>0)res+=centenas[c]+' ';
-    if(d===1&&u>0){res+=especiales[10+u]||'';return res.trim();}
-    if(d===2&&u>0){
-      if(u===1)res+=masculinoUn?'veintiún':'veintiuno';
-      else res+=especiales[20+u]||'';
-      return res.trim();
-    }
-    if(d>0){res+=decenas[d];if(u>0)res+=' y ';}
-    if(u>0){
-      if(u===1&&d===0&&masculinoUn)res+='un';
-      else res+=unidades[u];
-    }
-    return res.trim();
-  }
-  if(numero===0)return'cero';
-  let res='';
-  const millones=Math.floor(numero/1000000);
-  const miles=Math.floor((numero%1000000)/1000);
-  const resto=numero%1000;
-  if(millones>0){
-    if(millones===1)res+='un millón ';
-    else res+=convertirGrupo(millones,true)+' millones ';
-  }
-  if(miles>0){
-    if(miles===1)res+='mil ';
-    else res+=convertirGrupo(miles,true)+' mil ';
-  }
-  if(resto>0)res+=convertirGrupo(resto,false);
-  return res.trim().toUpperCase();
-}
-
-renderProyectos();
-</script>
-</body>
-</html>
+  html+=`
